@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador de Animes - AniList</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a2e; margin: 0; padding: 20px; color: #eee; }
+        header { text-align: center; margin-bottom: 30px; }
+        h1 { color: #00d4ff; text-shadow: 0 0 10px rgba(0,212,255,0.5); }
+        .search-bar {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        input[type="text"] {
+            padding: 12px;
+            font-size: 16px;
+            width: 320px;
+            max-width: 100%;
+            border: 2px solid #00d4ff;
+            border-radius: 8px;
+            outline: none;
+            background: #16213e;
+            color: #fff;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            background: #00d4ff;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover { background: #00a8cc; transform: scale(1.05); }
+        .sfw-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 15px;
+            color: #ff6b9d;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .sfw-toggle input { transform: scale(1.2); cursor: pointer; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            cursor: pointer;
+            transition: transform 0.2s;
+            border: 1px solid #0f3460;
+        }
+        .card:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 8px 25px rgba(0,212,255,0.3); }
+        .card img { width: 100%; height: 300px; object-fit: cover; background: #0f3460; }
+        .card h3 { 
+            padding: 12px; 
+            text-align: center; 
+            margin: 0; 
+            font-size: 14px; 
+            color: #fff;
+        }
+        .loading { text-align: center; font-size: 18px; color: #00d4ff; margin: 40px; }
+        .warning { 
+            background: linear-gradient(90deg, #ff6b9d, #ff8e53);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            display: inline-block;
+            margin: 10px 0;
+            box-shadow: 0 4px 15px rgba(255,107,157,0.4);
+        }
+        .error-msg { 
+            color: #ff6b6b; 
+            text-align: center; 
+            grid-column: 1 / -1; 
+            padding: 20px; 
+            background: rgba(255,107,107,0.1);
+            border: 1px solid #ff6b6b;
+            border-radius: 8px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .badge-hentai { background: #ff6b9d; color: white; }
+        .badge-nsfw { background: #ff8e53; color: white; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🔍 Buscador de Animes (AniList)</h1>
+        <div class="search-bar">
+            <input type="text" id="search-input" placeholder="Ej: Akane wa Tsumare Somerareru" autofocus>
+            <button id="search-btn">Buscar</button>
+            <label class="sfw-toggle">
+                <input type="checkbox" id="sfw-checkbox" checked>
+                Solo contenido SFW
+            </label>
+        </div>
+        <div id="nsfw-warning" class="warning" style="display: none;">⚠️ MODO +18 ACTIVADO - Contenido explícito visible</div>
+    </header>
+
+    <div id="anime-list" class="grid"></div>
+    <div id="loading" class="loading" style="display: none;"> Buscando en AniList...</div>
+
+<script>
+    const API_URL = 'https://graphql.anilist.co';
+    const lista = document.getElementById('anime-list');
+    const loading = document.getElementById('loading');
+    const input = document.getElementById('search-input');
+    const btn = document.getElementById('search-btn');
+    const nsfwWarning = document.getElementById('nsfw-warning');
+    const sfwCheckbox = document.getElementById('sfw-checkbox');
+
+    sfwCheckbox.addEventListener('change', () => {
+        nsfwWarning.style.display = sfwCheckbox.checked ? 'none' : 'inline-block';
+    });
+
+    async function buscarAnimes() {
+        let query = input.value.trim();
+        if (!query) return cargarTopAnimes();
+
+        lista.innerHTML = '';
+        loading.style.display = 'block';
+
+        // Consulta GraphQL para AniList
+        const graphqlQuery = {
+            query: `
+                query($search: String, $perPage: Int) {
+                    Page(perPage: $perPage) {
+                        media(search: $search, type: ANIME, sort: SCORE_DESC) {
+                            id
+                            idMal
+                            title {
+                                romaji
+                                english
+                                native
+                            }
+                            coverImage {
+                                large
+                                medium
+                            }
+                            averageScore
+                            genres
+                            isAdult
+                        }
+                    }
+                }
+            `,
+            variables: {
+                search: query,
+                perPage: 25
+            }
+        };
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(graphqlQuery)
+            });
+
+            const data = await response.json();
+            let animes = data.data?.Page?.media || [];
+
+            // Filtrar contenido adulto si el checkbox está marcado
+            if (sfwCheckbox.checked) {
+                animes = animes.filter(anime => !anime.isAdult);
+            }
+
+            mostrarAnimes(animes, query);
+
+        } catch (e) {
+            console.error(e);
+            lista.innerHTML = `<div class="error-msg"> Error: ${e.message}</div>`;
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+
+    function mostrarAnimes(animes, query) {
+        if (animes.length === 0) {
+            lista.innerHTML = `<div class="error-msg">
+                 No se encontraron resultados para "${query}"<br>
+                <small>Prueba con otro nombre o verifica la ortografía</small>
+            </div>`;
+            return;
+        }
+
+        lista.innerHTML = '';
+        animes.forEach(anime => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            
+            const title = anime.title.english || anime.title.romaji || anime.title.native;
+            const imgUrl = anime.coverImage.large || anime.coverImage.medium;
+            const score = anime.averageScore || 'N/A';
+            const isAdult = anime.isAdult;
+            
+            // Badge para contenido +18
+            const badge = isAdult ? '<span class="badge badge-hentai">+18</span>' : '';
+            
+            card.innerHTML = `
+                <img src="${imgUrl}" alt="${title}" loading="lazy">
+                <h3>${title} ${badge}<br><small style="color: #00d4ff">★ ${score}</small></h3>
+            `;
+            
+            const malId = anime.idMal || anime.id;
+            card.onclick = () => {
+                if (malId) {
+                    window.location.href = `detalle.html?id=${malId}`;
+                } else {
+                    alert(`AniList ID: ${anime.id}`);
+                }
+            };
+            lista.appendChild(card);
+        });
+    }
+
+    async function cargarTopAnimes() {
+        lista.innerHTML = '';
+        loading.style.display = 'block';
+        
+        const graphqlQuery = {
+            query: `
+                query {
+                    Page(perPage: 24) {
+                        media(type: ANIME, sort: SCORE_DESC, isAdult: false) {
+                            id
+                            idMal
+                            title {
+                                romaji
+                                english
+                            }
+                            coverImage {
+                                large
+                            }
+                            averageScore
+                            isAdult
+                        }
+                    }
+                }
+            `
+        };
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(graphqlQuery)
+            });
+            const data = await response.json();
+            mostrarAnimes(data.data?.Page?.media || [], 'Top Animes');
+        } catch(e) {
+            console.error(e);
+            lista.innerHTML = `<div class="error-msg">❌ Error al cargar top animes</div>`;
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+
+    btn.addEventListener('click', buscarAnimes);
+    input.addEventListener('keypress', e => { if (e.key === 'Enter') buscarAnimes(); });
+    window.addEventListener('load', cargarTopAnimes);
+</script>
+</body>
+</html>

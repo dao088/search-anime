@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalle Staff</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a2e; color: #eee; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        .header {
+            background: #16213e;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            display: flex;
+            gap: 30px;
+        }
+        .header img {
+            width: 250px;
+            height: 350px;
+            object-fit: cover;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+        }
+        .header-info { flex: 1; }
+        .header-info h1 { font-size: 28px; margin-bottom: 10px; color: #ff6b9d; }
+        .header-info .japanese { color: #888; margin-bottom: 15px; font-size: 16px; }
+        
+        .fav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #ff6b9d;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        
+        .info-list {
+            margin: 15px 0;
+            line-height: 1.8;
+        }
+        .info-list strong { color: #ff6b9d; }
+        
+        .links {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .links a {
+            background: #0f3460;
+            color: #00d4ff;
+            padding: 6px 14px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        .links a:hover { background: #1a3a6e; }
+        
+        .section {
+            background: #16213e;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        .section h2 {
+            font-size: 22px;
+            margin-bottom: 20px;
+            color: #ff6b9d;
+            border-bottom: 2px solid #ff6b9d;
+            padding-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 15px;
+        }
+        .card {
+            background: #0f3460;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 1px solid #1a1a2e;
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: translateY(-5px); }
+        .card img { width: 100%; height: 220px; object-fit: cover; }
+        .card-info { padding: 10px; text-align: center; }
+        .card-info .title {
+            font-weight: bold;
+            font-size: 13px;
+            margin-bottom: 5px;
+            color: #00d4ff;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .card-info .role {
+            font-size: 11px;
+            color: #ff6b9d;
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+        .card-info .type {
+            font-size: 10px;
+            color: #888;
+            text-transform: uppercase;
+        }
+        
+        .loading { text-align: center; padding: 50px; font-size: 20px; color: #ff6b9d; }
+        .back-btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #ff6b9d;
+            color: #1a1a2e;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        
+        @media (max-width: 768px) {
+            .header { flex-direction: column; align-items: center; }
+            .header img { width: 200px; height: 280px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="javascript:history.back()" class="back-btn">← Volver</a>
+        <div id="content"></div>
+        <div id="loading" class="loading">Cargando información del staff...</div>
+    </div>
+
+    <script>
+        const API_URL = 'https://graphql.anilist.co';
+        const urlParams = new URLSearchParams(window.location.search);
+        const staffId = urlParams.get('id');
+        const loading = document.getElementById('loading');
+        const content = document.getElementById('content');
+
+        async function cargarStaff() {
+            if (!staffId) {
+                content.innerHTML = '<div class="section"><p style="color: #ff6b6b; text-align: center;">No se especificó un ID de staff</p></div>';
+                loading.style.display = 'none';
+                return;
+            }
+
+            try {
+                const idNum = parseInt(staffId);
+                let staff = null;
+
+                const query = `
+                    query($id: Int) {
+                        Staff(id: $id) {
+                            id
+                            name {
+                                full
+                                native
+                                alternative
+                            }
+                            image {
+                                large
+                            }
+                            description
+                            favourites
+                            gender
+                            dateOfBirth {
+                                month
+                                day
+                            }
+                            dateOfDeath {
+                                month
+                                day
+                            }
+                            age
+                            yearsActive
+                            homeTown
+                            bloodType
+                            languageV2
+                            siteUrl
+                            staffMedia(page: 1, perPage: 25, sort: POPULARITY_DESC) {
+                                edges {
+                                    staffRole
+                                    node {
+                                        id
+                                        idMal
+                                        title {
+                                            romaji
+                                            english
+                                        }
+                                        coverImage {
+                                            medium
+                                            large
+                                        }
+                                        type
+                                        format
+                                        status
+                                        episodes
+                                        chapters
+                                        startDate {
+                                            year
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }`;
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, variables: { id: idNum } })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+
+                const data = await response.json();
+                staff = data.data?.Staff;
+
+                if (!staff) {
+                    throw new Error(`Staff con ID ${staffId} no encontrado`);
+                }
+
+                mostrarStaff(staff);
+                loading.style.display = 'none';
+
+            } catch (error) {
+                console.error('Error:', error);
+                content.innerHTML = `<div class="section"><p style="color: #ff6b6b; text-align: center;">Error al cargar<br><small>${error.message}</small></p></div>`;
+                loading.style.display = 'none';
+            }
+        }
+
+        function mostrarStaff(staff) {
+            const name = staff.name.full;
+            const native = staff.name.native || '';
+            const alternative = staff.name.alternative?.length ? ` (${staff.name.alternative.join(', ')})` : '';
+            
+            // Formatear fecha de nacimiento
+            let birthInfo = '';
+            if (staff.dateOfBirth?.month && staff.dateOfBirth?.day) {
+                const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                birthInfo = `${months[staff.dateOfBirth.month - 1]} ${staff.dateOfBirth.day}`;
+            }
+            
+            // Formatear años activo
+            let yearsActive = '';
+            if (staff.yearsActive?.length) {
+                yearsActive = staff.yearsActive.length === 2 
+                    ? `${staff.yearsActive[0]} - ${staff.yearsActive[1]}`
+                    : `${staff.yearsActive[0]} - Presente`;
+            }
+            
+            // Links externos
+            const siteUrl = staff.siteUrl || '';
+            const twitterMatch = staff.description?.match(/https?:\/\/twitter\.com\/[^\s<"]+/i);
+            const twitterUrl = twitterMatch ? twitterMatch[0] : null;
+            
+            let html = `
+                <div class="header">
+                    <img src="${staff.image.large}" alt="${name}" onerror="this.src='https://via.placeholder.com/250x350?text=No+Image'">
+                    <div class="header-info">
+                        <h1>${name}</h1>
+                        ${native ? `<div class="japanese">${native}${alternative}</div>` : ''}
+                        
+                        <div class="fav-btn">❤️ ${staff.favourites?.toLocaleString() || 0} favoritos</div>
+                        
+                        <div class="info-list">
+                            ${birthInfo ? `<div><strong>🎂 Nacimiento:</strong> ${birthInfo}</div>` : ''}
+                            ${staff.gender ? `<div><strong> Género:</strong> ${staff.gender}</div>` : ''}
+                            ${staff.bloodType ? `<div><strong>🩸 Tipo de sangre:</strong> ${staff.bloodType}</div>` : ''}
+                            ${staff.homeTown ? `<div><strong>📍 Origen:</strong> ${staff.homeTown}</div>` : ''}
+                            ${staff.age ? `<div><strong>🎂 Edad:</strong> ${staff.age} años</div>` : ''}
+                            ${yearsActive ? `<div><strong>💼 Años activo:</strong> ${yearsActive}</div>` : ''}
+                            ${staff.languageV2 ? `<div><strong> Idioma:</strong> ${staff.languageV2}</div>` : ''}
+                        </div>
+                        
+                        <div class="links">
+                            <a href="${siteUrl}" target="_blank"> AniList</a>
+                            ${twitterUrl ? `<a href="${twitterUrl}" target="_blank">🐦 Twitter</a>` : ''}
+                        </div>
+                        
+                        ${staff.description ? `
+                            <div style="margin-top: 20px; line-height: 1.6; color: #ccc;">
+                                <strong>📖 Biografía:</strong><br>
+                                ${staff.description.replace(/<br\s*\/?>/gi, '<br>').replace(/<i>/gi, '').replace(/<\/i>/gi, '')}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+
+            // Separar anime y manga staff roles
+            const animeRoles = staff.staffMedia?.edges?.filter(e => e.node.type === 'ANIME') || [];
+            const mangaRoles = staff.staffMedia?.edges?.filter(e => e.node.type === 'MANGA') || [];
+
+            // ANIME STAFF ROLES
+            if (animeRoles.length > 0) {
+                html += `<div class="section"><h2>🎬 Anime Staff Roles</h2><div class="grid">`;
+                animeRoles.forEach(edge => {
+                    const node = edge.node;
+                    const title = node.title.english || node.title.romaji;
+                    const imgUrl = node.coverImage.medium || node.coverImage.large;
+                    const tipo = node.type === 'ANIME' ? 'detalle.html' : 'manga.html';
+                    const id = node.idMal || node.id;
+                    
+                    html += `
+                        <div class="card" onclick="window.location.href='${tipo}?id=${id}'">
+                            <img src="${imgUrl}" alt="${title}" onerror="this.src='https://via.placeholder.com/180x220?text=No+Image'">
+                            <div class="card-info">
+                                <div class="title">${title}</div>
+                                <div class="role">${edge.staffRole || 'Staff'}</div>
+                                <div class="type">${node.format || ''} ${node.startDate?.year ? '• ' + node.startDate.year : ''}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div></div>`;
+            }
+
+            // MANGA STAFF ROLES
+            if (mangaRoles.length > 0) {
+                html += `<div class="section"><h2> Manga Staff Roles</h2><div class="grid">`;
+                mangaRoles.forEach(edge => {
+                    const node = edge.node;
+                    const title = node.title.english || node.title.romaji;
+                    const imgUrl = node.coverImage.medium || node.coverImage.large;
+                    const tipo = node.type === 'ANIME' ? 'detalle.html' : 'manga.html';
+                    const id = node.idMal || node.id;
+                    
+                    html += `
+                        <div class="card" onclick="window.location.href='${tipo}?id=${id}'">
+                            <img src="${imgUrl}" alt="${title}" onerror="this.src='https://via.placeholder.com/180x220?text=No+Image'">
+                            <div class="card-info">
+                                <div class="title">${title}</div>
+                                <div class="role">${edge.staffRole || 'Staff'}</div>
+                                <div class="type">${node.format || ''} ${node.startDate?.year ? '• ' + node.startDate.year : ''}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div></div>`;
+            }
+
+            content.innerHTML = html;
+        }
+
+        cargarStaff();
+    </script>
+</body>
+</html>
