@@ -145,6 +145,7 @@
                             <div class="stat-item"><strong> Episodios:</strong> ${anime.episodes || '?'}</div>
                             <div class="stat-item"><strong>📅 Año:</strong> ${anime.seasonYear || 'N/A'}</div>
                             <div class="stat-item"><strong> Tipo:</strong> ${anime.format || anime.type}</div>
+                            <div class="stat-item"><strong> duracion:</strong> ${anime.duration + " min"  || 'N/A'}</div>
                         </div>
                         <div class="genres">${anime.genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}</div>
                         ${anime.studios?.nodes?.length ? `<div style="margin-top:15px"><strong>🎨 Estudios:</strong> ${anime.studios.nodes.map(s => s.name).join(', ')}</div>` : ''}
