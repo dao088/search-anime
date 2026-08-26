@@ -16,6 +16,11 @@
             flex-wrap: wrap;
             align-items: center;
         }
+        .search-box-wrapper {
+            position: relative;
+            width: 320px;
+            max-width: 100%;
+        }
         input[type="text"] {
             padding: 12px;
             font-size: 16px;
@@ -26,6 +31,77 @@
             outline: none;
             background: #16213e;
             color: #fff;
+            box-sizing: border-box;
+        }
+        .autocomplete-list {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 50;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: left;
+            max-height: 420px;
+            overflow-y: auto;
+        }
+        .autocomplete-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover,
+        .autocomplete-item.active {
+            background: rgba(0,212,255,0.15);
+        }
+        .autocomplete-item img {
+            width: 34px;
+            height: 48px;
+            object-fit: cover;
+            border-radius: 4px;
+            background: #0f3460;
+            flex-shrink: 0;
+        }
+        .autocomplete-item .ac-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .autocomplete-item .ac-title {
+            font-size: 14px;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .autocomplete-item .ac-title mark {
+            background: rgba(0,212,255,0.35);
+            color: #fff;
+            border-radius: 2px;
+        }
+        .autocomplete-item .ac-meta {
+            font-size: 11px;
+            color: #8899aa;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .autocomplete-loading {
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #00d4ff;
+        }
+        .autocomplete-empty {
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #8899aa;
         }
         button {
             padding: 12px 24px;
@@ -110,7 +186,10 @@
     <header>
         <h1>🔍 Buscador de Animes (AniList)</h1>
         <div class="search-bar">
-            <input type="text" id="search-input" placeholder="Ej: Akane wa Tsumare Somerareru" autofocus>
+            <div class="search-box-wrapper">
+                <input type="text" id="search-input" placeholder="Ej: Akane wa Tsumare Somerareru" autofocus autocomplete="off">
+                <div id="autocomplete-list" class="autocomplete-list" style="display: none;"></div>
+            </div>
             <button id="search-btn">Buscar</button>
             <label class="sfw-toggle">
                 <input type="checkbox" id="sfw-checkbox" checked>
@@ -134,6 +213,193 @@
 
     sfwCheckbox.addEventListener('change', () => {
         nsfwWarning.style.display = sfwCheckbox.checked ? 'none' : 'inline-block';
+        if (input.value.trim()) fetchAutocomplete(input.value.trim());
+    });
+
+    // ===== AUTOCOMPLETADO (estilo Google) =====
+    const acList = document.getElementById('autocomplete-list');
+    let acDebounceTimer = null;
+    let acAbortController = null;
+    let acCurrentItems = [];
+    let acActiveIndex = -1;
+    let acRequestId = 0; // evita que respuestas viejas pisen a las nuevas
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    // Resalta la parte del título que coincide con lo escrito
+    function highlightMatch(title, query) {
+        const safeTitle = escapeHtml(title);
+        const idx = title.toLowerCase().indexOf(query.toLowerCase());
+        if (idx === -1) return safeTitle;
+        const before = escapeHtml(title.slice(0, idx));
+        const match = escapeHtml(title.slice(idx, idx + query.length));
+        const after = escapeHtml(title.slice(idx + query.length));
+        return `${before}<mark>${match}</mark>${after}`;
+    }
+
+    function closeAutocomplete() {
+        acList.style.display = 'none';
+        acList.innerHTML = '';
+        acCurrentItems = [];
+        acActiveIndex = -1;
+    }
+
+    function renderAutocompleteLoading() {
+        acList.style.display = 'block';
+        acList.innerHTML = `<div class="autocomplete-loading"> Buscando...</div>`;
+    }
+
+    function renderAutocomplete(items, query) {
+        acCurrentItems = items;
+        acActiveIndex = -1;
+
+        if (items.length === 0) {
+            acList.style.display = 'block';
+            acList.innerHTML = `<div class="autocomplete-empty">Sin coincidencias</div>`;
+            return;
+        }
+
+        acList.innerHTML = items.map((anime, i) => {
+            const title = anime.title.english || anime.title.romaji || anime.title.native;
+            const img = anime.coverImage.medium || anime.coverImage.large;
+            const year = anime.seasonYear ? anime.seasonYear : '';
+            const adultBadge = anime.isAdult ? '<span class="badge badge-hentai" style="margin-left:0;">+18</span>' : '';
+            return `
+                <div class="autocomplete-item" data-index="${i}">
+                    <img src="${img}" alt="" loading="lazy">
+                    <div class="ac-info">
+                        <span class="ac-title">${highlightMatch(title, query)}</span>
+                        <span class="ac-meta">${year} ${adultBadge}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        acList.style.display = 'block';
+
+        acList.querySelectorAll('.autocomplete-item').forEach(el => {
+            el.addEventListener('click', () => {
+                const item = acCurrentItems[parseInt(el.dataset.index, 10)];
+                selectAutocompleteItem(item);
+            });
+        });
+    }
+
+    function selectAutocompleteItem(anime) {
+        const title = anime.title.english || anime.title.romaji || anime.title.native;
+        input.value = title;
+        closeAutocomplete();
+        buscarAnimes();
+    }
+
+    function setActiveItem(newIndex) {
+        const items = acList.querySelectorAll('.autocomplete-item');
+        if (items.length === 0) return;
+        items.forEach(el => el.classList.remove('active'));
+        acActiveIndex = (newIndex + items.length) % items.length;
+        const activeEl = items[acActiveIndex];
+        activeEl.classList.add('active');
+        activeEl.scrollIntoView({ block: 'nearest' });
+    }
+
+async function fetchAutocomplete(query) {
+    const myRequestId = ++acRequestId;
+
+    if (acAbortController) acAbortController.abort();
+    acAbortController = new AbortController();
+
+    // Construimos las variables dinámicamente
+    const variables = {
+        search: query,
+        perPage: 8
+    };
+
+    // Solo agregamos isAdult cuando queremos filtrar SFW
+    if (sfwCheckbox.checked) {
+        variables.isAdult = false;
+    }
+    // Si no está checked → no mandamos isAdult → AniList devuelve SFW + NSFW
+
+    const graphqlQuery = {
+        query: `
+            query($search: String, $perPage: Int, $isAdult: Boolean) {
+                Page(perPage: $perPage) {
+                    media(search: $search, type: ANIME, sort: SEARCH_MATCH, isAdult: $isAdult) {
+                        id
+                        idMal
+                        title { romaji english native }
+                        coverImage { medium large }
+                        seasonYear
+                        isAdult
+                    }
+                }
+            }
+        `,
+        variables: variables
+    };
+
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(graphqlQuery),
+            signal: acAbortController.signal
+        });
+        const data = await response.json();
+
+        if (myRequestId !== acRequestId) return;
+
+        const items = data.data?.Page?.media || [];
+        renderAutocomplete(items, query);
+    } catch (e) {
+        if (e.name === 'AbortError') return;
+        console.error('Autocomplete error:', e);
+        closeAutocomplete();
+    }
+}
+    input.addEventListener('input', () => {
+        const query = input.value.trim();
+        clearTimeout(acDebounceTimer);
+
+        if (!query) {
+            closeAutocomplete();
+            return;
+        }
+
+        renderAutocompleteLoading();
+        acDebounceTimer = setTimeout(() => fetchAutocomplete(query), 300);
+    });
+
+    input.addEventListener('keydown', (e) => {
+        const isOpen = acList.style.display === 'block' && acCurrentItems.length > 0;
+
+        if (e.key === 'ArrowDown') {
+            if (!isOpen) return;
+            e.preventDefault();
+            setActiveItem(acActiveIndex + 1);
+        } else if (e.key === 'ArrowUp') {
+            if (!isOpen) return;
+            e.preventDefault();
+            setActiveItem(acActiveIndex - 1);
+        } else if (e.key === 'Enter') {
+            if (isOpen && acActiveIndex >= 0) {
+                e.preventDefault();
+                selectAutocompleteItem(acCurrentItems[acActiveIndex]);
+            }
+            // si no hay item activo, el listener de "keypress" original hace la búsqueda normal
+        } else if (e.key === 'Escape') {
+            closeAutocomplete();
+        }
+    });
+
+    // Cerrar el dropdown al hacer click fuera
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-box-wrapper')) {
+            closeAutocomplete();
+        }
     });
 
     async function buscarAnimes() {
